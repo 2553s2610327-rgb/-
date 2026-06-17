@@ -1,116 +1,170 @@
 import streamlit as st
-import google.generativeai as genai
+import pandas as pd
+import json
+import random
+from pathlib import Path
 
-# 페이지 설정
 st.set_page_config(
-    page_title="연애상담 챗봇",
-    page_icon="💌",
-    layout="centered"
+    page_title="Seat Shuffle",
+    page_icon="🪑",
+    layout="wide"
 )
 
-# 제목
-st.title("💌 연애상담 챗봇")
-st.caption("Gemini 2.5 Flash Lite 기반")
+DATA_FILE = "seat_history.json"
 
-# API 키 불러오기
-try:
-    api_key = st.secrets["GEMINI_API_KEY"]
-    genai.configure(api_key=api_key)
 
-except Exception:
-    st.error("API 키를 불러오지 못했습니다. secrets 설정을 확인해주세요.")
-    st.stop()
+def load_history():
+    try:
+        if Path(DATA_FILE).exists():
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        return []
+    except Exception:
+        return []
 
-# 모델 설정
-MODEL_NAME = "gemini-2.5-flash-lite"
 
-try:
-    model = genai.GenerativeModel(MODEL_NAME)
-except Exception as e:
-    st.error(f"모델 초기화 오류: {e}")
-    st.stop()
+def save_history(history):
+    try:
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump(history, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        st.error(f"저장 오류: {e}")
 
-# 시스템 프롬프트
-SYSTEM_PROMPT = """
-너는 따뜻하고 공감 능력이 뛰어난 연애상담 전문가야.
 
-규칙:
-- 사용자의 감정을 먼저 공감해줘.
-- 지나치게 딱딱하지 않게 자연스럽게 대화해.
-- 현실적인 조언을 제공해.
-- 공격적이거나 위험한 조언은 하지 마.
-- 답변은 너무 길지 않게 적당한 길이로 해줘.
+def generate_new_seating(students, history):
+    seats = list(range(len(students)))
+
+    previous_positions = {}
+
+    for record in history:
+        for student, seat in record.items():
+            previous_positions.setdefault(student, set()).add(seat)
+
+    best_assignment = None
+    best_score = -1
+
+    for _ in range(500):
+        shuffled = seats.copy()
+        random.shuffle(shuffled)
+
+        assignment = dict(zip(students, shuffled))
+
+        score = 0
+
+        for student, seat in assignment.items():
+            if seat not in previous_positions.get(student, set()):
+                score += 1
+
+        if score > best_score:
+            best_score = score
+            best_assignment = assignment
+
+    return best_assignment
+
+
+st.title("🪑 Seat Shuffle")
+st.subheader("이전 자리와 최대한 겹치지 않는 새로운 자리 배치")
+
+history = load_history()
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.metric("저장된 배치 기록", len(history))
+
+with col2:
+    if history:
+        latest = history[-1]
+        st.metric("최근 배치 학생 수", len(latest))
+    else:
+        st.metric("최근 배치 학생 수", 0)
+
+st.markdown("---")
+
+st.markdown("""
+### 📌 서비스 소개
+
+Seat Shuffle은 이전 자리 기록을 분석하여
+학생들이 과거와 최대한 다른 자리에 앉을 수 있도록
+새로운 자리 배치를 생성합니다.
+
+공정하고 다양한 자리 경험을 제공하는 것이 목표입니다.
+""")
+
+st.markdown("---")
+
+st.header("학생 명단 입력")
+
+student_text = st.text_area(
+    "학생 이름을 한 줄에 한 명씩 입력하세요",
+    height=250,
+    placeholder="""
+김민수
+이서연
+박준호
+최지우
+...
 """
+)
 
-# 세션 상태 초기화
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+if st.button("🎲 새로운 자리 생성"):
+    try:
+        students = [
+            name.strip()
+            for name in student_text.split("\n")
+            if name.strip()
+        ]
 
-# 이전 대화 출력
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+        if len(students) < 2:
+            st.warning("학생을 2명 이상 입력하세요.")
+        else:
+            new_assignment = generate_new_seating(
+                students,
+                history
+            )
 
-# 사용자 입력
-user_input = st.chat_input("연애 고민을 입력하세요...")
+            history.append(new_assignment)
+            save_history(history)
 
-if user_input:
+            result_df = pd.DataFrame(
+                {
+                    "학생": list(new_assignment.keys()),
+                    "자리번호": list(new_assignment.values())
+                }
+            ).sort_values("자리번호")
 
-    # 사용자 메시지 저장
-    st.session_state.messages.append({
-        "role": "user",
-        "content": user_input
-    })
+            st.success("새 자리 배치 생성 완료!")
 
-    # 사용자 메시지 출력
-    with st.chat_message("user"):
-        st.markdown(user_input)
+            st.dataframe(
+                result_df,
+                use_container_width=True
+            )
 
-    # AI 응답 생성
-    with st.chat_message("assistant"):
+    except Exception as e:
+        st.error(f"오류 발생: {e}")
 
-        with st.spinner("답변 생성 중..."):
+st.markdown("---")
 
-            try:
-                # 대화 기록 구성
-                conversation = SYSTEM_PROMPT + "\n\n"
+st.header("📚 최근 배치 기록")
 
-                for msg in st.session_state.messages:
-                    role = "사용자" if msg["role"] == "user" else "상담사"
-                    conversation += f"{role}: {msg['content']}\n"
+if history:
+    recent = history[-1]
 
-                # Gemini 호출
-                response = model.generate_content(conversation)
+    recent_df = pd.DataFrame(
+        {
+            "학생": list(recent.keys()),
+            "자리번호": list(recent.values())
+        }
+    ).sort_values("자리번호")
 
-                bot_reply = response.text
+    st.dataframe(
+        recent_df,
+        use_container_width=True
+    )
 
-                # 응답 출력
-                st.markdown(bot_reply)
+else:
+    st.info("아직 저장된 자리 배치가 없습니다.")
 
-                # 기록 저장
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": bot_reply
-                })
+st.markdown("---")
 
-            except Exception as e:
-                error_message = f"오류가 발생했습니다: {e}"
-
-                st.error(error_message)
-
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": error_message
-                })
-
-# 사이드바
-with st.sidebar:
-    st.header("설정")
-
-    if st.button("대화 초기화"):
-        st.session_state.messages = []
-        st.rerun()
-
-    st.markdown("---")
-    st.markdown("### 사용 모델")
-    st.code(MODEL_NAME)
+st.caption("Seat Shuffle | 이전 자리와 겹치지 않는 공정한 자리 배치")
