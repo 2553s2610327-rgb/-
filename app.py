@@ -1,195 +1,251 @@
 import streamlit as st
-import pandas as pd
 import random
+import pandas as pd
 
 st.set_page_config(
-    page_title="자리배치 최적화",
-    page_icon="🪑",
+    page_title="스마트 자리배치 생성기",
     layout="wide"
 )
 
-st.title("🪑 이전 자리와 겹치지 않는 자리배치")
-st.caption("과거 자리 이력을 분석하여 최대한 다른 자리에 배치합니다.")
+# --------------------------
+# 초기 데이터
+# --------------------------
 
-# ----------------------------
-# 기본 학생 목록
-# ----------------------------
-DEFAULT_STUDENTS = [
-    "김민수",
-    "이서준",
-    "박지호",
-    "최도윤",
-    "정하준",
-    "강예린",
-    "윤서연",
-    "한지민",
-    "송유진",
-    "조수아",
-    "오현우",
-    "백지훈",
-    "신민재",
-    "문서윤",
-    "장유나",
-    "임채원",
-    "김도현",
-    "이하린",
-    "박서준",
-    "최유진"
-]
+if "students" not in st.session_state:
+    st.session_state.students = [
+        "김민준","이서준","박도윤","최예준",
+        "정하준","강지호","윤시우","한유진",
+        "송서연","임지민","조수아","장하은"
+    ]
 
-# ----------------------------
+if "history" not in st.session_state:
+    st.session_state.history = []
+
+if "current_seat" not in st.session_state:
+    st.session_state.current_seat = None
+
+# --------------------------
+# 점수 계산
+# --------------------------
+
+def seat_score(new_pos, histories):
+
+    score = 0
+
+    for old in histories:
+
+        for student in new_pos:
+
+            if student not in old:
+                continue
+
+            nr, nc = new_pos[student]
+            orr, occ = old[student]
+
+            distance = abs(nr-orr) + abs(nc-occ)
+
+            score += distance * 5
+
+            if (nr, nc) == (orr, occ):
+                score -= 100
+
+    return score
+
+# --------------------------
+# 배치 생성
+# --------------------------
+
+def generate_best_seat(students, rows, cols, histories):
+
+    seats = [(r, c) for r in range(rows) for c in range(cols)]
+
+    if len(students) > len(seats):
+        raise ValueError("학생 수가 좌석 수보다 많습니다.")
+
+    best_score = -999999
+    best_map = None
+
+    for _ in range(300):
+
+        shuffled = students[:]
+        random.shuffle(shuffled)
+
+        pos = {}
+
+        for i, student in enumerate(shuffled):
+            pos[student] = seats[i]
+
+        score = seat_score(pos, histories)
+
+        if score > best_score:
+            best_score = score
+            best_map = pos
+
+    return best_map
+
+# --------------------------
+# 좌석표 출력
+# --------------------------
+
+def draw_classroom(seat_map, rows, cols):
+
+    grid = [["" for _ in range(cols)] for _ in range(rows)]
+
+    for student, (r, c) in seat_map.items():
+        grid[r][c] = student
+
+    st.markdown(
+        """
+        <div style="
+        background:#ffd54f;
+        text-align:center;
+        padding:15px;
+        border-radius:10px;
+        font-size:24px;
+        font-weight:bold;">
+        교 탁
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    st.write("")
+
+    for r in range(rows):
+
+        cols_ui = st.columns(cols)
+
+        for c in range(cols):
+
+            name = grid[r][c]
+
+            with cols_ui[c]:
+
+                st.markdown(
+                    f"""
+                    <div style="
+                    border:2px solid #444;
+                    border-radius:10px;
+                    padding:18px;
+                    text-align:center;
+                    background:#f5f5f5;
+                    min-height:80px;
+                    font-weight:bold;
+                    ">
+                    🪑<br>
+                    {name}
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+# --------------------------
 # 사이드바
-# ----------------------------
+# --------------------------
+
 st.sidebar.header("설정")
 
-uploaded_file = st.sidebar.file_uploader(
-    "과거 자리 CSV 업로드",
-    type=["csv"]
-)
-
-student_count = st.sidebar.number_input(
-    "학생 수",
-    min_value=4,
-    max_value=40,
-    value=20
-)
-
-cols = st.sidebar.number_input(
-    "열(가로)",
-    min_value=2,
-    max_value=10,
-    value=5
+student_text = st.sidebar.text_area(
+    "학생 이름 (한 줄에 한 명)",
+    "\n".join(st.session_state.students)
 )
 
 rows = st.sidebar.number_input(
-    "행(세로)",
-    min_value=2,
+    "행 수",
+    min_value=1,
+    max_value=10,
+    value=3
+)
+
+cols = st.sidebar.number_input(
+    "열 수",
+    min_value=1,
     max_value=10,
     value=4
 )
 
-if rows * cols < student_count:
-    st.error("좌석 수가 학생 수보다 적습니다.")
-    st.stop()
+students = [
+    s.strip()
+    for s in student_text.split("\n")
+    if s.strip()
+]
 
-students = DEFAULT_STUDENTS[:student_count]
+st.session_state.students = students
 
-# ----------------------------
-# 과거 데이터 읽기
-# ----------------------------
-history = {}
+# --------------------------
+# 자리 생성 버튼
+# --------------------------
 
-if uploaded_file:
+if st.sidebar.button("새 자리배치 생성"):
+
     try:
-        df = pd.read_csv(uploaded_file)
 
-        required_cols = {"학생", "자리"}
+        result = generate_best_seat(
+            students,
+            rows,
+            cols,
+            st.session_state.history
+        )
 
-        if required_cols.issubset(df.columns):
+        st.session_state.current_seat = result
 
-            for _, row in df.iterrows():
-                student = str(row["학생"])
-                seat = int(row["자리"])
-
-                history.setdefault(student, set()).add(seat)
-
-            st.success("과거 데이터 로드 완료")
-
-        else:
-            st.warning(
-                "CSV에는 '학생', '자리' 컬럼이 필요합니다."
-            )
+        st.session_state.history.append(result)
 
     except Exception as e:
-        st.warning(f"파일 읽기 오류: {e}")
+        st.error(str(e))
 
-# ----------------------------
-# 좌석 생성
-# ----------------------------
-seats = list(range(1, rows * cols + 1))
-
-# ----------------------------
-# 최적화 배치
-# ----------------------------
-best_assignment = {}
-best_score = -1
-
-for _ in range(500):
-    shuffled = seats.copy()
-    random.shuffle(shuffled)
-
-    assignment = {}
-
-    score = 0
-
-    for student, seat in zip(students, shuffled):
-
-        assignment[student] = seat
-
-        if student in history:
-
-            if seat not in history[student]:
-                score += 10
-            else:
-                score -= 20
-
-        else:
-            score += 5
-
-    if score > best_score:
-        best_score = score
-        best_assignment = assignment.copy()
-
-# ----------------------------
-# 결과 테이블 생성
-# ----------------------------
-seat_map = [["" for _ in range(cols)] for _ in range(rows)]
-
-for student, seat in best_assignment.items():
-
-    r = (seat - 1) // cols
-    c = (seat - 1) % cols
-
-    seat_map[r][c] = student
-
-display_df = pd.DataFrame(
-    seat_map,
-    index=[f"{i+1}행" for i in range(rows)],
-    columns=[f"{i+1}열" for i in range(cols)]
-)
-
-# ----------------------------
+# --------------------------
 # 메인 화면
-# ----------------------------
-st.subheader("🎯 최종 자리배치")
+# --------------------------
 
-st.dataframe(
-    display_df,
-    use_container_width=True
-)
+st.title("🏫 스마트 자리배치 생성기")
 
-st.subheader("학생별 배정 결과")
+st.caption("이전 자리와 최대한 겹치지 않게 자동 배치")
 
-result_df = pd.DataFrame(
-    {
-        "학생": list(best_assignment.keys()),
-        "배정 자리": list(best_assignment.values())
-    }
-).sort_values("배정 자리")
+if st.session_state.current_seat is None:
 
-st.dataframe(
-    result_df,
-    use_container_width=True
-)
+    try:
 
-st.metric(
-    "최적화 점수",
-    best_score
-)
+        first = generate_best_seat(
+            students,
+            rows,
+            cols,
+            st.session_state.history
+        )
 
-st.download_button(
-    "배치 결과 CSV 다운로드",
-    result_df.to_csv(index=False).encode("utf-8-sig"),
-    file_name="seat_assignment.csv",
-    mime="text/csv"
-)
+        st.session_state.current_seat = first
+
+    except:
+        pass
+
+if st.session_state.current_seat:
+
+    draw_classroom(
+        st.session_state.current_seat,
+        rows,
+        cols
+    )
+
+    st.divider()
+
+    seat_df = []
+
+    for student, pos in sorted(
+        st.session_state.current_seat.items()
+    ):
+        seat_df.append(
+            [student, f"{pos[0]+1}행 {pos[1]+1}열"]
+        )
+
+    st.subheader("학생별 위치")
+
+    st.dataframe(
+        pd.DataFrame(
+            seat_df,
+            columns=["학생", "위치"]
+        ),
+        use_container_width=True
+    )
+
+else:
+    st.info("학생 수를 입력한 뒤 자리배치를 생성하세요.")
