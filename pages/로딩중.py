@@ -1,15 +1,21 @@
 import streamlit as st
 import random
 import time
+import datetime
 
 # 페이지 설정
 st.set_page_config(
     page_title="자리배치 생성기",
     page_icon="🪑",
-    layout="centered")
+    layout="centered"
+)
 
 st.title("🪑 자리배치 랜덤 생성기")
 st.write("이름을 입력하고 랜덤으로 자리배치를 만들어보세요!")
+
+# 세션 상태 초기화 (아카이브 저장용)
+if "seat_archive" not in st.session_state:
+    st.session_state.seat_archive = []
 
 # -------------------------
 # 입력 영역
@@ -86,16 +92,36 @@ if start_button:
         placeholder.empty()
 
         # -------------------------
-        # 결과 출력
+        # [핵심 수정] 결과를 아카이브용 데이터로 변환 후 세션에 저장
+        # -------------------------
+        current_layout = []
+        idx = 0
+        for r in range(rows):
+            row_cells = []
+            for c in range(cols):
+                row_cells.append(names[idx])
+                idx += 1
+            current_layout.append(row_cells)
+            
+        # 아카이브 배열 맨 앞에 추가 (최신순)
+        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        st.session_state.seat_archive.insert(0, {
+            "id": time.time(),
+            "time": now_str,
+            "rows": rows,
+            "cols": cols,
+            "layout": current_layout
+        })
+
+        # -------------------------
+        # 결과 출력 (원본 스타일 유지)
         # -------------------------
         st.success("🎉 자리 배치 완료!")
 
-        index = 0
         for r in range(rows):
             cols_ui = st.columns(cols)
             for c in range(cols):
-                name = names[index]
-                index += 1
+                name = current_layout[r][c]
 
                 if name == "빈자리":
                     cols_ui[c].markdown(
@@ -109,3 +135,4 @@ if start_button:
                     )
 
     except Exception as e:
+        st.error(f"오류 발생: {e}")
