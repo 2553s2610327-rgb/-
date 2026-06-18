@@ -1,6 +1,7 @@
 import streamlit as st
 import random
 import time
+import datetime
 
 # 페이지 설정
 st.set_page_config(
@@ -87,26 +88,26 @@ if start_button:
         placeholder.empty()
 
         # -------------------------
-        # 결과 출력
+        # 결과 구조화 및 아카이브 저장
         # -------------------------
         st.success("🎉 자리 배치 완료!")
 
+        current_layout = []
         index = 0
         for r in range(rows):
-            cols_ui = st.columns(cols)
+            row_cells = []
             for c in range(cols):
-                name = names[index]
+                row_cells.append(names[index])
                 index += 1
-
-                if name == "빈자리":
-                    cols_ui[c].markdown(
-                        "<div style='text-align:center; padding:15px; border-radius:10px; background-color:#eeeeee;'>🪑 빈자리</div>",
-                        unsafe_allow_html=True
-                    )
-                else:
-                    cols_ui[c].markdown(
-                        f"<div style='text-align:center; padding:15px; border-radius:10px; background-color:#d1e7dd; font-weight:bold;'>{name}</div>",
-                        unsafe_allow_html=True
-                    )
-
-    except Exception as e:
+            current_layout.append(row_cells)
+        
+        # 세션 스테이트 초기화 및 저장
+        if "archive" not in st.session_state:
+            st.session_state.archive = []
+            
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # 중복 저장 방지하며 아카이브 최상단에 추가
+        if not st.session_state.archive or st.session_state.archive[0]["layout"] != current_layout:
+            st.session_state.archive.insert(0, {
+                "id": time.time(),
