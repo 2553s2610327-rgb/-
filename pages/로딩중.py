@@ -6,8 +6,7 @@ import time
 st.set_page_config(
     page_title="자리배치 생성기",
     page_icon="🪑",
-    layout="centered"
-)
+    layout="centered")
 
 st.title("🪑 자리배치 랜덤 생성기")
 st.write("이름을 입력하고 랜덤으로 자리배치를 만들어보세요!")
